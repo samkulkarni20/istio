@@ -77,7 +77,7 @@ dispatcher.onPost(/^\/ratings\/[0-9]*/, function (req, res) {
     return
   }
 
-  if (process.env.SERVICE_VERSION === 'v2') { // the version that is backed by a database
+  if (process.env.SERVICE_VERSION === 'v2' || process.env.SERVICE_VERSION === 'v3') { // the version that is backed by a database
     res.writeHead(501, {'Content-type': 'application/json'})
     res.end(JSON.stringify({error: 'Post not implemented for database backed ratings'}))
   } else { // the version that holds ratings in-memory
@@ -167,6 +167,52 @@ dispatcher.onGet(/^\/ratings\/[0-9]*/, function (req, res) {
         }
       })
     }
+  } else if (process.env.SERVICE_VERSION === 'v3') {
+    var firstRating = 0
+    var secondRating = 0
+
+    const { Client } = require('pg')
+    var config = {
+        host: process.env.PGHOST,
+        port: process.env.PGPORT,
+        user: process.env.PGUSER,
+        password: process.env.PGPASSWORD,
+        database: 'ratings'
+    }
+    const client = new Client(config)
+
+    client.connect(err => {
+      if (err) {
+        res.end(JSON.stringify({error: 'could not connect to ratings database'}))
+        console.log(err)
+        return
+      }
+    })
+
+    client.query('SELECT rating FROM ratings', (err, results) => {
+      if (err) {
+        console.error('Query error', err.stack)
+        res.writeHead(500, {'Content-type': 'application/json'})
+        res.end(JSON.stringify({error: 'could not perform select'}))
+      } else {
+        if (results.rows[0]) {
+            firstRating = results.rows[0].rating
+        }
+        if (results.rows[1]) {
+            secondRating = results.rows[1].rating
+        }
+        var result = {
+            id: productId,
+            ratings: {
+                Reviewer1: firstRating,
+                Reviewer2: secondRating
+            }
+        }
+        res.writeHead(200, {'Content-type': 'application/json'})
+        res.end(JSON.stringify(result))
+      }
+      client.end()
+    })
   } else {
       if (process.env.SERVICE_VERSION === 'v-faulty') {
         // in half of the cases return error,
